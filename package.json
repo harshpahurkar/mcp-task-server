@@ -1,0 +1,32 @@
+{
+  "name": "mcp-task-server",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for tasks, notes, and SQLite records with typed tool validation.",
+  "type": "module",
+  "main": "dist/index.js",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/index.ts",
+    "web": "tsx src/web.ts",
+    "dev:ui": "npm --prefix frontend run dev",
+    "build:ui": "npm --prefix frontend run build",
+    "test:e2e": "npm --prefix frontend run test:e2e",
+    "seed": "python scripts/seed.py",
+    "smoke": "tsx scripts/smoke-client.ts",
+    "smoke:docker": "tsx scripts/smoke-client.ts --docker",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.21.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^4.1.5"
+  }
+}

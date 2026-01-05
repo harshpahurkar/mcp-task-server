@@ -1,0 +1,16 @@
+node_modules/
+dist/
+data/*.sqlite
+coverage/
+
+# Logs and PID files
+*.log
+*.pid
+*.err.log
+*.out.log
+
+# Local env
+.env
+
+# OS
+.DS_Store
