@@ -55,12 +55,12 @@ export class TaskRepository {
       assertTaskStatus(input.status);
       return this.db
         .prepare(
-          "SELECT id, title, status, priority, project, due_date, created_at FROM tasks WHERE status = ? ORDER BY id LIMIT ?"
+          "SELECT id, title, status, priority, project, due_date, created_at FROM tasks WHERE status = ? ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, id LIMIT ?"
         )
         .all(input.status, limit) as Task[];
     }
     return this.db
-      .prepare("SELECT id, title, status, priority, project, due_date, created_at FROM tasks ORDER BY id LIMIT ?")
+      .prepare("SELECT id, title, status, priority, project, due_date, created_at FROM tasks ORDER BY CASE priority WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, id LIMIT ?")
       .all(limit) as Task[];
   }
 
