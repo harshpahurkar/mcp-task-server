@@ -19,7 +19,7 @@ const statusSchema = z.enum(["todo", "in_progress", "blocked", "done"]);
 const limitSchema = z.number().int().min(1).max(50).default(10);
 const idSchema = z.number().int().positive().max(2_147_483_647);
 const tableSchema = z.enum(["tasks", "notes", "records"]);
-const projectSchema = z.string().trim().min(1).optional();
+const projectSchema = z.string().trim().min(1).max(100).optional();
 
 export const readOnlyAnnotations = {
   readOnlyHint: true,
