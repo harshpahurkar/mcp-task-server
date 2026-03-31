@@ -1,18 +1,25 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname, join, resolve } from "node:path";
 import { ZodError } from "zod";
 import { DatabaseManager } from "./database.js";
+import { BodyTooLargeError, createRateLimiter, readJsonBody } from "./http-guards.js";
 import { TaskRepository } from "./repository.js";
 import { findToolDefinition, toolCatalog, toolDefinitions } from "./tools.js";
 
 const db = new DatabaseManager(process.env.TASK_DB_PATH);
 const repo = new TaskRepository(db.db);
 const staticCache = new Map<string, { body: Buffer; contentType: string }>();
-const requestCounts = new Map<string, { windowStart: number; count: number }>();
 const rateLimitWindowMs = Number(process.env.MCP_RATE_LIMIT_WINDOW_MS ?? 60_000);
 const rateLimitMax = Number(process.env.MCP_RATE_LIMIT_MAX ?? 120);
+const maxBodyBytes = Number(process.env.MCP_MAX_BODY_BYTES ?? 1_048_576);
+const isRateLimited = createRateLimiter({
+  windowMs: rateLimitWindowMs,
+  maxRequests: rateLimitMax,
+  trustProxy: process.env.MCP_TRUST_PROXY === "1"
+});
 const allowedOrigins = new Set(
   (process.env.MCP_ALLOWED_ORIGINS ?? "http://127.0.0.1:5175,http://127.0.0.1:5176,http://localhost:5175,http://localhost:5176")
     .split(",")
@@ -36,34 +43,10 @@ function corsHeaders(request: IncomingMessage): Record<string, string> {
 function sendJson(request: IncomingMessage, response: ServerResponse, status: number, payload: unknown): void {
   response.writeHead(status, {
     "content-type": "application/json; charset=utf-8",
+    "x-request-id": randomUUID(),
     ...corsHeaders(request)
   });
   response.end(JSON.stringify(payload));
-}
-
-function rateLimitKey(request: IncomingMessage): string {
-  return request.socket.remoteAddress ?? "unknown";
-}
-
-function isRateLimited(request: IncomingMessage): boolean {
-  const now = Date.now();
-  const key = rateLimitKey(request);
-  const current = requestCounts.get(key);
-  if (!current || now - current.windowStart >= rateLimitWindowMs) {
-    requestCounts.set(key, { windowStart: now, count: 1 });
-    return false;
-  }
-  current.count += 1;
-  return current.count > rateLimitMax;
-}
-
-async function readBody(request: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.from(chunk as Buffer));
-  }
-  const raw = Buffer.concat(chunks).toString("utf-8").trim();
-  return raw ? JSON.parse(raw) : {};
 }
 
 function contentType(path: string): string {
@@ -94,7 +77,7 @@ async function serveStatic(request: IncomingMessage, requestPath: string, respon
   if (!existsSync(file)) {
     sendJson(request, response, 200, {
       app: "Agent Ledger Console",
-      detail: "Frontend build not found. Run npm.cmd install and npm.cmd run build:ui.",
+      detail: `Frontend build not found. Run ${process.platform === "win32" ? "npm.cmd" : "npm"} install && ${process.platform === "win32" ? "npm.cmd" : "npm"} run build:ui.`,
       tools: toolCatalog()
     });
     return;
@@ -144,7 +127,7 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
       return;
     }
     try {
-      const body = await readBody(request);
+      const body = await readJsonBody(request, maxBodyBytes);
       const input = tool.httpInputSchema.parse(body);
       const result = tool.run(repo, input);
       sendJson(request, response, 200, {
@@ -154,6 +137,10 @@ async function handleApi(request: IncomingMessage, response: ServerResponse, url
         result
       });
     } catch (error) {
+      if (error instanceof BodyTooLargeError) {
+        sendJson(request, response, 413, { tool: name, error: error.message });
+        return;
+      }
       if (error instanceof ZodError) {
         sendJson(request, response, 400, { tool: name, error: "Validation failed", issues: error.issues });
         return;
@@ -181,6 +168,8 @@ const server = createServer((request, response) => {
 });
 
 const port = Number(process.env.PORT ?? 5175);
+const timeoutMs = Number(process.env.MCP_REQUEST_TIMEOUT_MS ?? 30_000);
+server.setTimeout(timeoutMs);
 server.listen(port, "127.0.0.1", () => {
   console.log(`Agent Ledger Console bridge listening on http://127.0.0.1:${port}`);
 });
