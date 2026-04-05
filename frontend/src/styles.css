@@ -37,7 +37,7 @@ body,
   min-height: 100vh;
 }
 
-:where(.app-shell, .workspace, .sidebar, .card, .panel, .metric-card, .topbar > *, .section-heading > *, .metric-grid > *, .two-column > *, .tool-grid > *, .trace-grid > *, .button-grid > *, .runner-editor > *) {
+:where(.app-shell, .workspace, .sidebar, .card, .panel, .metric-card, .topbar > *, .section-heading > *, .metric-grid > *, .proof-grid > *, .two-column > *, .tool-grid > *, .trace-grid > *, .button-grid > *, .runner-editor > *, .generated-fields > *) {
   min-width: 0;
 }
 
@@ -145,7 +145,7 @@ button { cursor: pointer; }
   gap: 18px;
 }
 
-.topbar, .section-heading, .metric-grid, .two-column, .tool-grid, .trace-grid, .button-grid, .runner-editor, .start-guide {
+.topbar, .section-heading, .metric-grid, .proof-grid, .two-column, .tool-grid, .trace-grid, .button-grid, .runner-editor, .generated-fields, .start-guide {
   display: grid;
   gap: 16px;
 }
@@ -190,18 +190,68 @@ button { cursor: pointer; }
 }
 
 .metric-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.proof-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: stretch; }
 .two-column { grid-template-columns: 1fr 1fr; }
 .tool-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-top: 16px; }
 .trace-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
 .button-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
 .runner-editor { margin-top: 16px; }
+.generated-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .compact-buttons { margin-top: 12px; }
 
-.metric-card, .card, .start-guide {
+.metric-card, .card, .start-guide, .proof-card, .runtime-failure {
   border: 1px solid var(--line);
   background: var(--panel);
   box-shadow: var(--shadow);
   border-radius: 8px;
+}
+
+.proof-card,
+.runtime-failure {
+  padding: 18px;
+}
+
+.proof-card {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.proof-card h2,
+.proof-card p {
+  margin: 0;
+}
+
+.proof-card p,
+.runtime-failure span {
+  color: #d6d3d1;
+  line-height: 1.5;
+}
+
+.proof-card.safe {
+  border-color: rgba(34, 197, 94, 0.32);
+}
+
+.proof-card.blocked,
+.runtime-failure {
+  border-color: rgba(251, 113, 133, 0.4);
+}
+
+.proof-card.result {
+  background: rgba(12, 10, 9, 0.52);
+}
+
+.runtime-failure {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  color: #fecdd3;
+  background: rgba(127, 29, 29, 0.24);
+}
+
+.runtime-failure div {
+  display: grid;
+  gap: 4px;
 }
 
 .start-guide {
@@ -342,6 +392,20 @@ input, select, textarea {
   outline: none;
 }
 
+.toggle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  color: #d6d3d1;
+  text-transform: none;
+}
+
+.toggle-row input {
+  width: auto;
+}
+
 textarea {
   min-height: 132px;
   resize: vertical;
@@ -359,6 +423,25 @@ input:focus, select:focus, textarea:focus {
   background: rgba(12, 10, 9, 0.44);
   border-radius: 8px;
   padding: 16px;
+}
+
+.protocol-details summary {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  list-style: none;
+}
+
+.protocol-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.protocol-details summary strong {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
 }
 
 .read-only-grid {
@@ -487,6 +570,30 @@ th {
   color: #fcd34d;
 }
 
+.status-todo {
+  color: #fde68a;
+  border-color: rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.08);
+}
+
+.status-in-progress {
+  color: #bfdbfe;
+  border-color: rgba(96, 165, 250, 0.35);
+  background: rgba(96, 165, 250, 0.08);
+}
+
+.status-blocked {
+  color: #fecdd3;
+  border-color: rgba(251, 113, 133, 0.42);
+  background: rgba(127, 29, 29, 0.22);
+}
+
+.status-done {
+  color: #bbf7d0;
+  border-color: rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.08);
+}
+
 .empty-state {
   border: 1px dashed var(--line);
   padding: 28px;
@@ -525,7 +632,7 @@ th {
 @media (max-width: 1120px) {
   .app-shell { grid-template-columns: 1fr; }
   .sidebar { position: static; height: auto; }
-  .metric-grid, .two-column, .tool-grid, .trace-grid, .button-grid, .start-guide, .read-only-grid { grid-template-columns: 1fr; }
+  .metric-grid, .proof-grid, .two-column, .tool-grid, .trace-grid, .button-grid, .start-guide, .read-only-grid, .generated-fields { grid-template-columns: 1fr; }
   .topbar { grid-template-columns: 1fr; }
 }
 

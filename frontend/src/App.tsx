@@ -18,7 +18,7 @@ import {
 } from "lucide-react";
 import React from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { api, ToolResponse } from "./api";
+import { ApiError, api, ToolResponse } from "./api";
 
 type Transcript = {
   label: string;
@@ -41,6 +41,15 @@ const sampleInputs: Record<string, unknown> = {
   search_notes: { query: "validation", limit: 5 },
   get_note: { id: 1 },
   read_record: { table: "records", id: 1 },
+  task_summary: { project: "mcp-server" }
+};
+
+const defaultFormValues: Record<string, Record<string, string>> = {
+  list_tasks: { status: "todo", limit: "10" },
+  get_task: { id: "2" },
+  search_notes: { query: "validation", limit: "5" },
+  get_note: { id: "1" },
+  read_record: { table: "records", id: "1" },
   task_summary: { project: "mcp-server" }
 };
 
@@ -134,18 +143,135 @@ function JsonPanel({ title, value, tone = "normal" }: { title: string; value: un
   );
 }
 
+function inputFromFields(tool: string, values: Record<string, string>): unknown {
+  switch (tool) {
+    case "list_tasks":
+      return { status: values.status || undefined, limit: Number(values.limit || 10) };
+    case "get_task":
+    case "get_note":
+      return { id: Number(values.id || 0) };
+    case "search_notes":
+      return { query: values.query ?? "", limit: Number(values.limit || 10) };
+    case "read_record":
+      return { table: values.table || "records", id: Number(values.id || 0) };
+    case "task_summary":
+      return values.project?.trim() ? { project: values.project.trim() } : {};
+    default:
+      return sampleInputs[tool] ?? {};
+  }
+}
+
+function transcriptError(error: unknown) {
+  if (error instanceof ApiError) {
+    return { message: error.message, response: error.payload };
+  }
+  return { message: error instanceof Error ? error.message : String(error) };
+}
+
+function ToolInputFields({
+  tool,
+  values,
+  onChange
+}: {
+  tool: string;
+  values: Record<string, string>;
+  onChange: (next: Record<string, string>) => void;
+}) {
+  function setValue(key: string, value: string) {
+    onChange({ ...values, [key]: value });
+  }
+  if (tool === "list_tasks") {
+    return (
+      <div className="generated-fields">
+        <div>
+          <label htmlFor="statusInput">Status</label>
+          <select id="statusInput" value={values.status ?? "todo"} onChange={(event) => setValue("status", event.target.value)}>
+            <option value="todo">todo</option>
+            <option value="in_progress">in_progress</option>
+            <option value="blocked">blocked</option>
+            <option value="done">done</option>
+          </select>
+        </div>
+        <NumberField id="limitInput" label="Limit" value={values.limit ?? "10"} min={1} max={50} onChange={(value) => setValue("limit", value)} />
+      </div>
+    );
+  }
+  if (tool === "get_task" || tool === "get_note") {
+    return <NumberField id="idInput" label="Record ID" value={values.id ?? "1"} min={1} onChange={(value) => setValue("id", value)} />;
+  }
+  if (tool === "search_notes") {
+    return (
+      <div className="generated-fields">
+        <div>
+          <label htmlFor="queryInput">Query</label>
+          <input id="queryInput" value={values.query ?? ""} onChange={(event) => setValue("query", event.target.value)} />
+        </div>
+        <NumberField id="noteLimitInput" label="Limit" value={values.limit ?? "5"} min={1} max={50} onChange={(value) => setValue("limit", value)} />
+      </div>
+    );
+  }
+  if (tool === "read_record") {
+    return (
+      <div className="generated-fields">
+        <div>
+          <label htmlFor="tableInput">Table</label>
+          <select id="tableInput" value={values.table ?? "records"} onChange={(event) => setValue("table", event.target.value)}>
+            <option value="tasks">tasks</option>
+            <option value="notes">notes</option>
+            <option value="records">records</option>
+          </select>
+        </div>
+        <NumberField id="recordIdInput" label="Record ID" value={values.id ?? "1"} min={1} onChange={(value) => setValue("id", value)} />
+      </div>
+    );
+  }
+  return (
+    <div>
+      <label htmlFor="projectInput">Project filter</label>
+      <input id="projectInput" value={values.project ?? ""} onChange={(event) => setValue("project", event.target.value)} />
+    </div>
+  );
+}
+
+function NumberField({
+  id,
+  label,
+  value,
+  min,
+  max,
+  onChange
+}: {
+  id: string;
+  label: string;
+  value: string;
+  min: number;
+  max?: number;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div>
+      <label htmlFor={id}>{label}</label>
+      <input id={id} type="number" min={min} max={max} value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
+function statusClass(status: string) {
+  return `badge status-${status.replace(/_/g, "-")}`;
+}
+
 export default function App() {
   const health = useQuery({ queryKey: ["health"], queryFn: api.health, refetchInterval: 5000 });
   const tools = useQuery({ queryKey: ["tools"], queryFn: api.tools });
   const [transcripts, setTranscripts] = React.useState<Transcript[]>([]);
   const [selectedTool, setSelectedTool] = React.useState("list_tasks");
+  const [runnerValues, setRunnerValues] = React.useState(defaultFormValues.list_tasks);
   const [runnerInput, setRunnerInput] = React.useState(JSON.stringify(sampleInputs.list_tasks, null, 2));
-  const [guideVisible, setGuideVisible] = React.useState(() => localStorage.getItem("agent-ledger:start-guide") !== "hidden");
+  const [useRawInput, setUseRawInput] = React.useState(false);
   const activeSection = useActiveSection(navIds);
 
   function dismissGuide() {
     localStorage.setItem("agent-ledger:start-guide", "hidden");
-    setGuideVisible(false);
   }
 
   const callTool = useMutation({
@@ -157,27 +283,29 @@ export default function App() {
     onError: (error, variables) => {
       dismissGuide();
       setTranscripts((current) => [
-        { label: variables.name, ok: false, payload: error instanceof Error ? error.message : String(error) },
+        { label: variables.name, ok: false, payload: transcriptError(error) },
         ...current
       ].slice(0, 8));
     }
   });
 
   const latestResult = transcripts.find((item) => item.ok)?.payload as ToolResponse | undefined;
+  const latestRejected = transcripts.find((item) => !item.ok);
   const taskRows = latestResult?.tool === "list_tasks" && Array.isArray(latestResult.result) ? latestResult.result : [];
-  const firstLoad = (health.isPending || tools.isPending) && !health.data && !tools.data && transcripts.length === 0;
   const orderedTools = toolOrder
     .map((name) => tools.data?.tools.find((tool) => tool.name === name))
     .filter(Boolean) as NonNullable<typeof tools.data>["tools"];
+  const backendError = health.error || tools.error;
 
   function chooseTool(name: string) {
     setSelectedTool(name);
+    setRunnerValues(defaultFormValues[name] ?? {});
     setRunnerInput(JSON.stringify(sampleInputs[name] ?? {}, null, 2));
   }
 
-  function runEditableTool() {
+  function runSelectedTool() {
     try {
-      callTool.mutate({ name: selectedTool, input: JSON.parse(runnerInput) });
+      callTool.mutate({ name: selectedTool, input: useRawInput ? JSON.parse(runnerInput) : inputFromFields(selectedTool, runnerValues) });
     } catch (error) {
       setTranscripts((current) => [
         { label: selectedTool, ok: false, payload: error instanceof Error ? error.message : String(error) },
@@ -214,50 +342,56 @@ export default function App() {
           <div>
             <span className="eyebrow">Safe local-data MCP console</span>
             <h1>Agent Ledger Console</h1>
-            <p>AI agents should read your local task data without being able to change it. Run a safe call, then try to break the rules.</p>
+            <p>Run one allowed read, then one forbidden call. The transcript should prove the agent can inspect data without mutating it.</p>
           </div>
           <div className="status-pill">
             <span className={health.data?.status === "ok" ? "dot ok" : "dot"} />
-            {health.data?.runtime ?? "Connecting"} / read-only
+            {backendError ? "Bridge offline" : `${health.data?.runtime ?? "Connecting"} / read-only`}
           </div>
         </header>
 
-        {guideVisible && transcripts.length === 0 && (
-          <section className="start-guide">
+        {backendError && (
+          <section className="runtime-failure" role="alert">
+            <AlertTriangle size={18} />
             <div>
-              <span className="eyebrow">Start here</span>
-              <h2>Prove the agent cannot mutate data</h2>
-              <p>Run a safe task read, then send an intentionally bad call. The transcript should show one success and one red rejection.</p>
+              <strong>Local bridge request failed.</strong>
+              <span>{backendError instanceof Error ? backendError.message : String(backendError)}</span>
             </div>
-            <button className="primary" onClick={runEditableTool}>
-              <Play size={16} /> Run list_tasks
-            </button>
-            <button className="danger" onClick={() => callTool.mutate({ name: "read_record", input: { table: "sqlite_master", id: 1 } })}>
-              <AlertTriangle size={16} /> Try unsafe table
-            </button>
           </section>
         )}
 
-        <section className="metric-grid">
-          {firstLoad ? (
-            Array.from({ length: 4 }).map((_, index) => <SkeletonCard key={index} />)
-          ) : (
-            <>
-              <StatCard icon={Archive} label="Registered tools" value={tools.data ? String(tools.data.tools.length) : "--"} detail="Every tool has a typed input schema." />
-              <StatCard icon={Database} label="Runtime" value={health.data?.runtime ?? "--"} detail={health.data ? "HTTP bridge over the MCP repository." : "Waiting for the local bridge."} />
-              <StatCard icon={ShieldCheck} label="Mutation tools" value="0" detail="No write tools are exposed." />
-              <StatCard icon={AlertTriangle} label="Safety presets" value={String(safetyPresets.length)} detail="Click one to prove rejection." />
-            </>
-          )}
+        <section className="proof-grid">
+          <article className="proof-card safe">
+            <span className="eyebrow">Allowed path</span>
+            <h2>Read tasks</h2>
+            <p>Calls `list_tasks` through the same repository and validation layer as the MCP server.</p>
+            <button className="primary" onClick={() => callTool.mutate({ name: "list_tasks", input: inputFromFields("list_tasks", defaultFormValues.list_tasks) })}>
+              <Play size={16} /> Run safe read
+            </button>
+          </article>
+          <article className="proof-card blocked">
+            <span className="eyebrow">Forbidden path</span>
+            <h2>Reject unsafe table</h2>
+            <p>Sends `sqlite_master` to `read_record`; the table allowlist should block it before SQL runs.</p>
+            <button className="danger" onClick={() => callTool.mutate({ name: "read_record", input: { table: "sqlite_master", id: 1 } })}>
+              <AlertTriangle size={16} /> Try unsafe call
+            </button>
+          </article>
+          <article className="proof-card result">
+            <span className="eyebrow">Last rejection</span>
+            <h2>{latestRejected ? latestRejected.label : "No bad call yet"}</h2>
+            <p>{latestRejected ? (latestRejected.payload as { message?: string }).message ?? "Rejected by the bridge." : "Trigger the forbidden path to prove validation is active."}</p>
+          </article>
         </section>
 
-        <section className="card panel" id="tools">
-          <div className="section-heading">
-            <div>
-              <span className="eyebrow">Tool Catalog</span>
-              <h2>Typed read-only tools</h2>
-            </div>
-          </div>
+        <details className="card panel protocol-details" id="tools">
+          <summary>
+            <span>
+              <span className="eyebrow">Protocol details</span>
+              <strong>Tool catalog and read-only annotations</strong>
+            </span>
+            <Archive size={18} />
+          </summary>
           <div className="trust-strip">
             <LockKeyhole size={17} />
             <div>
@@ -281,7 +415,7 @@ export default function App() {
               ))
             )}
           </div>
-        </section>
+        </details>
 
         <section className="two-column">
           <section className="card panel" id="runner">
@@ -301,11 +435,18 @@ export default function App() {
                   ))}
                 </select>
               </div>
-              <div>
-                <label htmlFor="toolInput">Input JSON</label>
-                <textarea id="toolInput" value={runnerInput} onChange={(event) => setRunnerInput(event.target.value)} />
-              </div>
-              <button className="primary" onClick={runEditableTool}>
+              <ToolInputFields tool={selectedTool} values={runnerValues} onChange={setRunnerValues} />
+              <label className="toggle-row">
+                <input type="checkbox" checked={useRawInput} onChange={(event) => setUseRawInput(event.target.checked)} />
+                Use raw JSON
+              </label>
+              {useRawInput && (
+                <div>
+                  <label htmlFor="toolInput">Input JSON</label>
+                  <textarea id="toolInput" value={runnerInput} onChange={(event) => setRunnerInput(event.target.value)} />
+                </div>
+              )}
+              <button className="primary" onClick={runSelectedTool}>
                 <Play size={16} /> Run selected tool
               </button>
             </div>
@@ -315,6 +456,9 @@ export default function App() {
               </button>
               <button className="secondary" onClick={() => chooseTool("search_notes")}>
                 <Search size={16} /> Load search_notes
+              </button>
+              <button className="secondary" onClick={() => chooseTool("get_note")}>
+                <BookOpenText size={16} /> Load get_note
               </button>
               <button className="secondary" onClick={() => chooseTool("read_record")}>
                 <FileJson size={16} /> Load read_record
@@ -386,7 +530,7 @@ export default function App() {
                   <tr key={String((task as { id: number }).id)}>
                     <td>{String((task as { id: number }).id)}</td>
                     <td>{String((task as { title: string }).title)}</td>
-                    <td><span className="badge">{String((task as { status: string }).status)}</span></td>
+                    <td><span className={statusClass(String((task as { status: string }).status))}>{String((task as { status: string }).status)}</span></td>
                     <td>{String((task as { priority: string }).priority)}</td>
                     <td>{String((task as { project: string }).project)}</td>
                   </tr>
@@ -412,7 +556,6 @@ export default function App() {
             {!transcripts.length && <div className="empty-state">Run a safe tool or trigger the Safety Lab. Accepted calls stay neutral; rejected calls turn red so failures are visible in a demo.</div>}
           </div>
         </section>
-        <footer className="portfolio-footer">Part of an AI ops portfolio built around one idea: you can&apos;t trust what you can&apos;t see.</footer>
       </section>
     </main>
   );
