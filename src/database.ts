@@ -61,6 +61,14 @@ export class DatabaseManager {
           value TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE INDEX IF NOT EXISTS idx_tasks_status_id ON tasks(status, id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_project_id ON tasks(project, id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_priority_status ON tasks(priority, status);
+        CREATE INDEX IF NOT EXISTS idx_notes_title ON notes(title COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_notes_body ON notes(body COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_notes_tags ON notes(tags COLLATE NOCASE);
+        CREATE INDEX IF NOT EXISTS idx_records_kind_key ON records(kind, key);
       `);
     });
   }

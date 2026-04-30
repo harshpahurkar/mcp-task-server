@@ -2,6 +2,8 @@ node_modules/
 dist/
 data/*.sqlite
 coverage/
+test-results/
+*.tsbuildinfo
 
 # Logs and PID files
 *.log

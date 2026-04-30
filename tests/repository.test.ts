@@ -47,6 +47,16 @@ describe("TaskRepository", () => {
     expect(() => repo.listTasks({ status: "bad" as never })).toThrow(/status must be one of/);
   });
 
+  it("creates indexes for common read paths", () => {
+    const taskIndexes = database.db.prepare("PRAGMA index_list('tasks')").all() as Array<{ name: string }>;
+    const noteIndexes = database.db.prepare("PRAGMA index_list('notes')").all() as Array<{ name: string }>;
+    const recordIndexes = database.db.prepare("PRAGMA index_list('records')").all() as Array<{ name: string }>;
+    expect(taskIndexes.map((row) => row.name)).toContain("idx_tasks_status_id");
+    expect(taskIndexes.map((row) => row.name)).toContain("idx_tasks_project_id");
+    expect(noteIndexes.map((row) => row.name)).toContain("idx_notes_body");
+    expect(recordIndexes.map((row) => row.name)).toContain("idx_records_kind_key");
+  });
+
   it("summarizes open high priority work", () => {
     const summary = repo.taskSummary({ project: "mcp-server" });
     expect(summary.matching_project).toBe("mcp-server");
